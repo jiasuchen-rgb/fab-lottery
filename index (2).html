@@ -1,0 +1,318 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>FAB 抽奖（500 抽｜不放回）</title>
+<style>
+:root{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial; color-scheme: dark;}
+body{margin:0;background:#0b0f19;color:#e8eefc}
+.wrap{max-width:1100px;margin:auto;padding:20px}
+h2{margin:0 0 8px}
+.card{background:#121a2b;border-radius:16px;padding:14px;border:1px solid rgba(255,255,255,.08);box-shadow:0 8px 30px rgba(0,0,0,.25)}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button{background:#2d6bff;color:#fff;border:0;padding:10px 14px;border-radius:12px;font-weight:900;cursor:pointer}
+button:disabled{opacity:.45;cursor:not-allowed}
+.btn2{background:#2a3247}
+.pill{background:rgba(255,255,255,.08);padding:6px 10px;border-radius:999px;font-size:12px}
+.good{color:#79ffa8;font-weight:950}
+.warn{color:#ffd479;font-weight:950}
+.bad{color:#ff7f93;font-weight:950}
+.muted{opacity:.75}
+input{background:#0c1322;color:#e8eefc;border:1px solid rgba(255,255,255,.12);border-radius:12px;padding:10px 12px;outline:none;min-width:240px}
+.log{max-height:380px;overflow:auto;margin-top:10px;border:1px solid rgba(255,255,255,.08);border-radius:12px}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th,td{padding:8px 10px;border-bottom:1px solid rgba(255,255,255,.08);text-align:left}
+th{position:sticky;top:0;background:#121a2b;z-index:1}
+.hint{font-size:12px;opacity:.8;line-height:1.5}
+/* Overlay */
+.overlay{position:fixed;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.72);backdrop-filter:blur(6px);z-index:9999}
+.overlay.show{display:flex}
+.modal{width:min(860px,92vw);border-radius:22px;border:1px solid rgba(255,255,255,.12);background:#0c1322;
+box-shadow:0 18px 80px rgba(0,0,0,.55);padding:18px}
+.modal h3{margin:0 0 6px;font-size:18px}
+.modal .big{font-size:28px;font-weight:1000;margin:8px 0 10px}
+.modal .actions{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h2>FAB 网页抽奖（不放回）</h2>
+  <div class="hint">
+    总抽数：<b id="total">—</b>｜单价：<b>79</b> RMB｜大奖：<b>S + A</b> 全屏弹窗 + 音效。<br/>
+    奖池库存来自表格：<b id="poolTotal">—</b>。因为总抽数固定为 500，抽满 500 次会停止（可能剩余 1 个奖品未被抽走）。
+  </div>
+
+  <div class="card" style="margin-top:12px;">
+    <div class="row">
+      <input id="customer" placeholder="请输入客户名字（必填）" />
+      <button id="draw1">抽 1 次</button>
+      <button id="draw10" class="btn2">抽 10 次</button>
+      <button id="export" class="btn2">导出 CSV</button>
+      <button id="reset" class="btn2" title="清空本地进度">重置</button>
+    </div>
+
+    <div class="row" style="margin-top:10px;">
+      <div class="pill">已抽：<b id="drawn">0</b> / <b id="total2">—</b></div>
+      <div class="pill">剩余可抽：<b id="remain">—</b></div>
+      <div class="pill">大奖剩余（S/A）：<b id="jackpotRemain">—</b></div>
+      <div class="pill">最终完成者奖励：<b id="bonusName">—</b></div>
+    </div>
+
+    <h3 id="last" style="margin:10px 0 0;">—</h3>
+    <div class="muted" id="lastMeta">请输入客户名字后抽奖</div>
+
+    <div class="log">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:64px;">序号</th>
+            <th style="width:90px;">时间</th>
+            <th style="width:140px;">客户</th>
+            <th>奖品</th>
+            <th style="width:60px;">档位</th>
+            <th style="width:74px;">本次</th>
+          </tr>
+        </thead>
+        <tbody id="log"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="overlay" id="overlay" role="dialog" aria-modal="true">
+  <div class="modal">
+    <h3 id="overlayTitle">🎉 恭喜中大奖！</h3>
+    <div class="big" id="overlayPrize">—</div>
+    <div class="muted" id="overlayMeta">—</div>
+    <div class="actions">
+      <button class="btn2" id="closeOverlay">关闭</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const CONFIG = {"meta": {"title": "FAB 网页抽奖", "totalDraws": 500, "drawPriceRMB": 79, "poolTotal": 501, "source": "Book1.xlsx/Sheet1", "jackpotTiers": ["S", "A"], "finisherBonus": "光暗礼盒"}, "prizes": [{"id": "A_043b375f90", "tier": "A", "name": "Everbloom // Life [SEA258] (High Seas) Rainbow Foil", "count": 1}, {"id": "A_290813c411", "tier": "A", "name": "Command and Conquer [HNT260] (The Hunted)", "count": 1}, {"id": "A_300ccff0d6", "tier": "A", "name": "Blood Splattered Vest [HNT168] (The Hunted) Rainbow Foil", "count": 1}, {"id": "A_57036a058a", "tier": "A", "name": "Sunken Treasure [SEA133] (High Seas) Cold Foil", "count": 1}, {"id": "A_705eeee877", "tier": "A", "name": "Golden Galea (Marvel) [SUP247] (Super Slam) Cold Foil", "count": 1}, {"id": "A_7c842a5d0f", "tier": "A", "name": "Gold-Baited Hook (Rainbow Foil) [SEA125] (High Seas) Rainbow Foil", "count": 1}, {"id": "A_8214b1ad5d", "tier": "A", "name": "Spinal Crush [WTR044-M] (Welcome to Rathe) Alpha Print Normal", "count": 1}, {"id": "A_abb1afc057", "tier": "A", "name": "Hunter's Klaive [HNT009] (The Hunted) Cold Foil", "count": 1}, {"id": "A_c9641518bc", "tier": "A", "name": "Command and Conquer [U-ARC159] (Arcane Rising Unlimited) Unlimited Normal", "count": 3}, {"id": "A_cbf8553c70", "tier": "A", "name": "Provoke (Extended Art) [HNT117] (The Hunted) Rainbow Foil", "count": 2}, {"id": "A_cf1f2134b6", "tier": "A", "name": "Sealace Sarong (Treasure) [SEA095] (High Seas) Cold Foil", "count": 1}, {"id": "A_d09310c16c", "tier": "A", "name": "Unsheathed [ROS248] (Rosetta) Rainbow Foil", "count": 1}, {"id": "A_e2ec31b4a7", "tier": "A", "name": "Goldfin Harpoon (Marvel) (Golden) [SEA093] (High Seas) Cold Foil", "count": 2}, {"id": "B_097fbc438a", "tier": "B", "name": "Conqueror of the High Seas (Rainbow Foil) [SEA130] (High Seas) Rainbow Foil", "count": 1}, {"id": "B_10e72831b4", "tier": "B", "name": "Storm of Sandikai [LGS107] (Promo) Cold Foil", "count": 2}, {"id": "B_1413bf417c", "tier": "B", "name": "Cull [HNT259] (The Hunted)", "count": 3}, {"id": "B_1a53452a1f", "tier": "B", "name": "Succumb to Temptation [ROS119] (Rosetta)", "count": 1}, {"id": "B_284af2dc55", "tier": "B", "name": "Sunken Treasure (Rainbow Foil) [SEA133] (High Seas) Rainbow Foil X2", "count": 1}, {"id": "B_2e3ed8ba20", "tier": "B", "name": "Roiling Fissure [HNT248] (The Hunted) Rainbow Foil", "count": 4}, {"id": "B_308d6ac41c", "tier": "B", "name": "Channel Lake Frigid [ELE146] (Tales of Aria) 1st Edition Rainbow Foil", "count": 1}, {"id": "B_381f1b42f6", "tier": "B", "name": "In the Palm of Your Hand [SUP171] (Super Slam) X2 ", "count": 3}, {"id": "B_38367d0d49", "tier": "B", "name": "Erase Face [UPR187] (Uprising) Rainbow Foil", "count": 1}, {"id": "B_40d0c8547a", "tier": "B", "name": "Erase Face [UPR187] (Uprising)", "count": 2}, {"id": "B_42ccf54290", "tier": "B", "name": "Chum, Friendly First Mate [SEA050] (High Seas)", "count": 1}, {"id": "B_4e1c051693", "tier": "B", "name": "Codex of bloodrot", "count": 1}, {"id": "B_5031e2d812", "tier": "B", "name": "Swabbie (Marvel) [SEA079] (High Seas) Cold Foil", "count": 1}, {"id": "B_57f4cdd9b5", "tier": "B", "name": "Burn Bare [SEA255] (High Seas) Rainbow Foil", "count": 3}, {"id": "B_580c60c823", "tier": "B", "name": "Mental Block [ROS169] (Rosetta)", "count": 1}, {"id": "B_5a4f0e261c", "tier": "B", "name": "Tenacity", "count": 2}, {"id": "B_60b7899234", "tier": "B", "name": "New Horizon [SUP256] (Super Slam)", "count": 1}, {"id": "B_64d1dec0b5", "tier": "B", "name": "Destructive Aethertide [ROS166] (Rosetta)", "count": 1}, {"id": "B_6508070486", "tier": "B", "name": "Provoke [HNT117] (The Hunted) Rainbow Foil X2 ", "count": 2}, {"id": "B_7503d85cf4", "tier": "B", "name": "Retrace the Past [HNT249] (The Hunted) Rainbow Foil", "count": 1}, {"id": "B_7651356e13", "tier": "B", "name": "Sea Legs [SEA187] (High Seas) Rainbow Foil", "count": 4}, {"id": "B_7ad6eeee2f", "tier": "B", "name": "Tenacity [HVY211] (Heavy Hitters) Rainbow Foil", "count": 1}, {"id": "B_7db1d340ce", "tier": "B", "name": "Cogwerx Dovetail [SEA011] (High Seas) Rainbow Foil", "count": 2}, {"id": "B_7e57ea93c4", "tier": "B", "name": "That All You Got? [UPR189] (Uprising)", "count": 2}, {"id": "B_85911f299d", "tier": "B", "name": "Poison the well", "count": 3}, {"id": "B_8c53c8b94d", "tier": "B", "name": "Felling of the Crown [SUP261] (Super Slam) X3", "count": 2}, {"id": "B_8c7e0b09f8", "tier": "B", "name": "Overcrowded [SUP216] (Super Slam) Rainbow Foil", "count": 3}, {"id": "B_951c90efe8", "tier": "B", "name": "Kiss of Death [HNT012] (The Hunted) Rainbow Foil", "count": 1}, {"id": "B_96a0ebc283", "tier": "B", "name": "Machinations of Dominion [ROS118] (Rosetta)", "count": 1}, {"id": "B_9b598f8db8", "tier": "B", "name": "Arcane Compliance [SEA261] (High Seas) X3", "count": 2}, {"id": "B_9b84b7fdb8", "tier": "B", "name": "Succumb to Temptation [ROS119] (Rosetta) Rainbow Foil", "count": 1}, {"id": "B_9c034d36ea", "tier": "B", "name": "Widow Veil Respirator ", "count": 1}, {"id": "B_9d862428ff", "tier": "B", "name": "Aurum Aegis [HVY051] (Heavy Hitters) Rainbow Foil", "count": 1}, {"id": "B_a595ee34e3", "tier": "B", "name": "Light Up the Leaves (Red) [SUP264] (Super Slam) Rainbow Foil", "count": 5}, {"id": "B_aa0ffd4b38", "tier": "B", "name": "Null Time Zone [HNT251] (The Hunted)", "count": 2}, {"id": "B_c572bfbb72", "tier": "B", "name": "Everbloom // Life [SEA258] (High Seas)", "count": 5}, {"id": "B_c5e20b1bf8", "tier": "B", "name": "Amnesia + Nourishing Emptiness", "count": 1}, {"id": "B_cd54bf6b1b", "tier": "B", "name": "Call to the Grave ", "count": 1}, {"id": "B_cfdd705be1", "tier": "B", "name": "Mask of Recurring Nightmares [MST004] (Part the Mistveil) Rainbow Foil", "count": 2}, {"id": "B_d2b4b55dd7", "tier": "B", "name": "Dual Threat [HNT223] (The Hunted) X2 ", "count": 3}, {"id": "B_d372b8ecd4", "tier": "B", "name": "Just a Nick (Rainbow Foil)", "count": 2}, {"id": "B_d76ecdebd6", "tier": "B", "name": "Chowder, Hearty Cook (Marvel) [SEA075] (High Seas) Cold Foil", "count": 1}, {"id": "B_db2ed000f3", "tier": "B", "name": "Bloodrush Bellow X3 ", "count": 3}, {"id": "B_e1346ae99d", "tier": "B", "name": "Burn Bare [SEA255] (High Seas) X3", "count": 2}, {"id": "B_efed8e422c", "tier": "B", "name": "Nourishing Emptiness (unlimited) X3", "count": 1}, {"id": "B_f06c351b91", "tier": "B", "name": "Plow Under [ROS032] (Rosetta)", "count": 1}, {"id": "B_f206cfc18a", "tier": "B", "name": "Cog in the Machine [SEA013] (High Seas) Rainbow Foil X3", "count": 1}, {"id": "B_f3c0c87e99", "tier": "B", "name": "Send Packing [HVY012] (Heavy Hitters)", "count": 1}, {"id": "B_f55eca7542", "tier": "B", "name": "Sigil of Brilliance [ROS022] (Rosetta)", "count": 2}, {"id": "C_18be22a12f", "tier": "C", "name": "3 Packs High Seas ", "count": 160}, {"id": "D_bc3cc424e8", "tier": "D", "name": "2 Packs High Seas ", "count": 227}, {"id": "S_1e21bc38db", "tier": "S", "name": "Fyendal's Spring Tunic [CRU178] (Crucible of War) 1st Edition Normal", "count": 1}, {"id": "S_44dcba8a5e", "tier": "S", "name": "Command and Conquer (Extended Art) [HNT260] (The Hunted) Rainbow Foil", "count": 1}, {"id": "S_57d946956f", "tier": "S", "name": "Kassai of the Golden Sand (Marvel) [HVY090] (Heavy Hitters) Cold Foil", "count": 1}, {"id": "S_678309d5d0", "tier": "S", "name": "Conqueror of the High Seas (Treasure) [SEA130] (High Seas) Cold Foil", "count": 1}, {"id": "S_b58a6ad941", "tier": "S", "name": "Fyendal's Spring Tunic [U-WTR150] (Welcome to Rathe Unlimited) Unlimited Rainbow Foil", "count": 1}, {"id": "S_d79c411d10", "tier": "S", "name": "Polly Cranka (Treasure) [SEA003] (High Seas) Cold Foil", "count": 1}, {"id": "S_d8abe666dd", "tier": "S", "name": "Dead Threads (Treasure) [SEA080] (High Seas) Cold Foil", "count": 1}]};
+const KEY = "fab500_named_v1";
+
+let state = JSON.parse(localStorage.getItem(KEY) || "null");
+if(!state){
+  state = {
+    drawn: 0,
+    log: [],         // each record: {n,t,customer,name,tier,actionId,actionSize}
+    remain: CONFIG.prizes.map(p => ({...p})),
+    actionSeq: 0,
+    finisher: null   // {customer, n, t}
+  };
+}
+
+const jackpotTiers = new Set(CONFIG.meta.jackpotTiers.map(x => String(x).toUpperCase()));
+
+function save(){ localStorage.setItem(KEY, JSON.stringify(state)); }
+function rem(){ return state.remain.reduce((s,p)=>s + (p.count||0), 0); }
+
+function jackpotRemain(){
+  return state.remain
+    .filter(p => jackpotTiers.has(String(p.tier||"").toUpperCase()))
+    .reduce((s,p)=>s + (p.count||0), 0);
+}
+
+function tierClass(t){
+  const u = String(t||"").toUpperCase();
+  if(u==="S"||u==="A") return "good";
+  if(u==="B"||u==="C") return "warn";
+  return "bad";
+}
+
+function pickOne(){
+  if(state.drawn >= CONFIG.meta.totalDraws) return null;
+  if(rem() <= 0) return null;
+
+  let r = Math.random() * rem();
+  for(const p of state.remain){
+    if(p.count<=0) continue;
+    if(r < p.count){
+      p.count--; state.drawn++;
+      return p;
+    }
+    r -= p.count;
+  }
+  return null;
+}
+
+function escapeCsv(s){
+  const x = String(s ?? "");
+  if(/[,"\n]/.test(x)) return `"${x.replaceAll('"','""')}"`;
+  return x;
+}
+
+function exportCSV(){
+  const header = ["序号","时间","客户","档位","奖品","本次抽数(actionSize)","本次编号(actionId)","是否大奖","是否最终完成者奖励"];
+  const rows = state.log.slice().reverse().map(e => {
+    const isJackpot = jackpotTiers.has(String(e.tier).toUpperCase()) ? "Y" : "N";
+    const isFinisherBonus = (state.finisher && state.finisher.customer===e.customer && state.finisher.n===e.n) ? "Y" : "N";
+    return [e.n,e.t,e.customer,e.tier,e.name,e.actionSize,e.actionId,isJackpot,isFinisherBonus].map(escapeCsv).join(",");
+  });
+  const csv = [header.join(","), ...rows].join("\n");
+  const blob = new Blob([csv], {type:"text/csv;charset=utf-8"});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `fab_lottery_${Date.now()}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
+// --- WebAudio fanfare (no external file)
+let audioCtx = null;
+function playJackpotSound(){
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = audioCtx;
+    const now = ctx.currentTime;
+
+    function tone(freq, start, dur, type="sine", gain=0.12){
+      const o = ctx.createOscillator();
+      const g = ctx.createGain();
+      o.type = type;
+      o.frequency.setValueAtTime(freq, start);
+      g.gain.setValueAtTime(0.0001, start);
+      g.gain.exponentialRampToValueAtTime(gain, start + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+      o.connect(g); g.connect(ctx.destination);
+      o.start(start); o.stop(start + dur + 0.05);
+    }
+
+    tone(523.25, now + 0.00, 0.25, "triangle", 0.10);
+    tone(659.25, now + 0.00, 0.25, "triangle", 0.10);
+    tone(783.99, now + 0.00, 0.25, "triangle", 0.10);
+    tone(1046.5, now + 0.18, 0.22, "sine", 0.08);
+    tone(1318.5, now + 0.28, 0.18, "sine", 0.06);
+  } catch(e) {}
+}
+
+function showOverlay(title, prizeLine, metaLine){
+  document.getElementById("overlayTitle").textContent = title;
+  document.getElementById("overlayPrize").textContent = prizeLine;
+  document.getElementById("overlayMeta").textContent = metaLine;
+  document.getElementById("overlay").classList.add("show");
+}
+
+function hideOverlay(){ document.getElementById("overlay").classList.remove("show"); }
+
+function maybeGrantFinisherBonus(customer, n, t){
+  // 规则：如果抽奖达到总抽数上限（500）则该客户成为“最终完成者”，获得“光暗礼盒”
+  // 只发放一次
+  if(state.finisher) return;
+  if(state.drawn >= CONFIG.meta.totalDraws){
+    state.finisher = { customer, n, t };
+    save();
+    showOverlay("🎁 最终完成者奖励", `恭喜 ${customer} 获得：${CONFIG.meta.finisherBonus}`, `第 ${n} 抽 · ${t}`);
+    playJackpotSound();
+  }
+}
+
+function render(){
+  document.getElementById("total").textContent = CONFIG.meta.totalDraws;
+  document.getElementById("total2").textContent = CONFIG.meta.totalDraws;
+  document.getElementById("poolTotal").textContent = CONFIG.meta.poolTotal;
+
+  document.getElementById("drawn").textContent = state.drawn;
+  document.getElementById("remain").textContent = Math.min(CONFIG.meta.totalDraws - state.drawn, rem());
+  document.getElementById("jackpotRemain").textContent = jackpotRemain();
+
+  document.getElementById("bonusName").textContent = state.finisher ? `${state.finisher.customer}（${CONFIG.meta.finisherBonus}）` : "未产生";
+
+  const last = state.log[0];
+  if(last){
+    document.getElementById("last").innerHTML = `<span class="${tierClass(last.tier)}">[${last.tier}]</span> ${last.name}`;
+    document.getElementById("lastMeta").textContent = `客户：${last.customer} · 第 ${last.n} 抽 · 本次抽 ${last.actionSize} 次（#${last.actionId}）`;
+  } else {
+    document.getElementById("last").textContent = "—";
+    document.getElementById("lastMeta").textContent = "请输入客户名字后抽奖";
+  }
+
+  const tbody = document.getElementById("log");
+  tbody.innerHTML = state.log.map(e => `
+    <tr>
+      <td>${e.n}</td>
+      <td class="muted">${e.t}</td>
+      <td>${e.customer}</td>
+      <td>${e.name}</td>
+      <td class="${tierClass(e.tier)}">${e.tier}</td>
+      <td>${e.actionSize}</td>
+    </tr>
+  `).join("");
+
+  const done = (state.drawn >= CONFIG.meta.totalDraws) || rem()<=0;
+  document.getElementById("draw1").disabled = done;
+  document.getElementById("draw10").disabled = done;
+}
+
+function draw(actionSize){
+  const customer = document.getElementById("customer").value.trim();
+  if(!customer) {
+    alert("请先输入客户名字（必填）");
+    return;
+  }
+
+  if(state.drawn >= CONFIG.meta.totalDraws) {
+    alert("已达到总抽数上限");
+    return;
+  }
+
+  state.actionSeq += 1;
+  const actionId = state.actionSeq;
+
+  let lastJackpot = null;
+  for(let i=0;i<actionSize;i++) {
+    const p = pickOne();
+    if(!p) break;
+    const t = new Date().toLocaleTimeString();
+    const rec = {
+      n: state.drawn,
+      t,
+      customer,
+      name: p.name,
+      tier: p.tier,
+      actionId,
+      actionSize
+    };
+    state.log.unshift(rec);
+
+    if(jackpotTiers.has(String(p.tier).toUpperCase())) lastJackpot = rec;
+  }
+
+  save();
+  render();
+
+  // 大奖弹窗：显示本次最后一个大奖（如果抽10次中有多个大奖，取最后一个）
+  if(lastJackpot){
+    showOverlay("🎉 恭喜中大奖！", `[${lastJackpot.tier}] ${lastJackpot.name}`, `客户：${lastJackpot.customer} · 第 ${lastJackpot.n} 抽 · ${lastJackpot.t}`);
+    playJackpotSound();
+  }
+
+  // 最终完成者奖励：达到 500 抽的那一抽的客户获得“光暗礼盒”
+  const latest = state.log[0];
+  if(latest) maybeGrantFinisherBonus(latest.customer, latest.n, latest.t);
+}
+
+document.getElementById("draw1").addEventListener("click", ()=> draw(1));
+document.getElementById("draw10").addEventListener("click", ()=> draw(10));
+document.getElementById("export").addEventListener("click", exportCSV);
+document.getElementById("reset").addEventListener("click", ()=> {
+  if(!confirm("确定要重置吗？这会清空本地所有抽奖记录与进度。")) return;
+  localStorage.removeItem(KEY);
+  location.reload();
+});
+
+document.getElementById("closeOverlay").addEventListener("click", hideOverlay);
+document.getElementById("overlay").addEventListener("click", (e)=>{ if(e.target.id==="overlay") hideOverlay(); });
+document.addEventListener("keydown", (e)=>{ if(e.key==="Escape") hideOverlay(); });
+
+render();
+</script>
+</body>
+</html>
